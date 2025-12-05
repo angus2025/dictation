@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>English Dictation Game</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, Arial, sans-serif;
+    background: linear-gradient(135deg, #e0f7fa, #c8e6c9);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 10px;
+    text-align: center;
+  }
+  h1 { font-size: 34px; color: #01579b; margin: 8px 0 4px; }
+  #stats { font-size: 20px; font-weight: bold; color: #1b5e20; margin-bottom: 6px; }
+
+  #repeatBtn {
+    padding: 14px 40px;
+    font-size: 26px;
+    background: #ff5722;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+    margin: 10px auto;
+  }
+
+  #chineseHint {
+    font-size: 64px;
+    font-weight: bold;
+    color: #e91e63;
+    margin: 10px 0;
+    min-height: 90px;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+  }
+
+  #selectedArea {
+    font-size: 72px;
+    font-weight: bold;
+    color: #1a237e;
+    letter-spacing: 12px;
+    margin: 10px 0;
+    min-height: 100px;
+  }
+
+  #letters {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: center;
+    gap: 14px;
+    padding: 10px;
+  }
+
+  .letter-btn {
+    width: 78px;
+    height 78px;
+    font-size: 40px;
+    font-weight: bold;
+    background: linear-gradient(145deg, #7c4dff, #5e35b1);
+    color: white;
+    border: none;
+    border-radius: 24px;
+    box-shadow: 0 6px 16px rgba(124,77,255,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .letter-btn:hover { transform: scale(1.08); }
+  .letter-btn:disabled {
+    background: linear-gradient(145deg, #66bb6a, #43a047);
+  }
+
+  #result {
+    font-size: 36px;
+    font-weight: bold;
+    min-height: 50px;
+    margin: 8px 0;
+  }
+
+  .bottom-btns {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 10px 0;
+  }
+  #mainBtn, #nextBtn {
+    padding: 14px 40px;
+    font-size: 26px;
+    border-radius: 50px;
+    border: none;
+    color: white;
+    cursor: pointer;
+    min-width: 160px;
+  }
+  #mainBtn { background: #43a047; }
+  #nextBtn { background: #1976d2; }
+</style>
+</head>
+<body>
+
+<h1>English Dictation Game</h1>
+<div id="stats">Question <span id="count">1</span>　Correct: <span id="correct">0</span></div>
+
+<button id="repeatBtn" style="display:none">Listen Again</button>
+<div id="chineseHint"></div>
+<div id="selectedArea"></div>
+<div id="letters"></div>
+<div id="result"></div>
+
+<div class="bottom-btns">
+  <button id="mainBtn">Start Game</button>
+  <button id="nextBtn" style="display:none">Next Word</button>
+</div>
+
+<audio id="audio" preload="none"></audio>
+
+<script>
+// 這行會被 app.py 自動注入
+const wordPairs = [];  // PLACEHOLDER
+
+let currentPair = null;
+let correctLetters = [];
+let selectedCount = 0;
+let questionCount = 1;
+let correctCount = 0;
+const audio = document.getElementById("audio");
+const chineseHint = document.getElementById("chineseHint");
+
+async function speak(text) {
+  audio.pause();
+  try {
+    const res = await fetch("/speak", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: text})
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    audio.src = url;
+    audio.play();
+  } catch (e) {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 0.85;
+    speechSynthesis.speak(utter);
+  }
+}
+
+const newQuestion = () => {
+  selectedCount = 0;
+  document.getElementById("result").textContent = "";
+  document.getElementById("selectedArea").textContent = "";
+  chineseHint.textContent = "";
+
+  currentPair = wordPairs[Math.floor(Math.random() * wordPairs.length)];
+  correctLetters = currentPair.en.split("");
+
+  document.getElementById("repeatBtn").style.display = "block";
+  document.getElementById("nextBtn").style.display = "block";
+
+  const shuffled = [...currentPair.en].sort(() => Math.random() - 0.5);
+  const lettersDiv = document.getElementById("letters");
+  lettersDiv.innerHTML = "";
+  shuffled.forEach(l => {
+    const btn = document.createElement("button");
+    btn.textContent = l.toUpperCase();
+    btn.className = "letter-btn";
+    btn.onclick = () => tryLetter(l, btn);
+    lettersDiv.appendChild(btn);
+  });
+
+  // 立刻顯示中文 + 0.6 秒後發音
+  chineseHint.textContent = currentPair.zh;
+  setTimeout(() => speak(currentPair.en), 600);
+};
+
+const tryLetter = (letter, btn) => {
+  if (letter === correctLetters[selectedCount]) {
+    selectedCount++;
+    btn.disabled = true;
+    const done = currentPair.en.substring(0, selectedCount).toUpperCase();
+    const remain = " _".repeat(currentPair.en.length - selectedCount);
+    document.getElementById("selectedArea").textContent = done + remain;
+
+    if (selectedCount === currentPair.en.length) {
+      document.getElementById("result").innerHTML = "Correct!";
+      document.getElementById("result").style.color = "#1b5e20";
+      correctCount++;
+      document.getElementById("correct").textContent = correctCount;
+      setTimeout(() => speak(currentPair.en), 700);
+    }
+  } else {
+    document.getElementById("result").textContent = "Wrong!";
+    document.getElementById("result").style.color = "#d32f2f";
+    btn.style.animation = "shake 0.5s";
+    setTimeout(() => document.getElementById("result").textContent = "", 2000);
+  }
+};
+
+document.getElementById("mainBtn").onclick = () => {
+  document.getElementById("mainBtn").style.display = "none";
+  newQuestion();
+};
+
+document.getElementById("repeatBtn").onclick = () => speak(currentPair.en);
+document.getElementById("nextBtn").onclick = () => {
+  questionCount++;
+  document.getElementById("count").textContent = questionCount;
+  newQuestion();
+};
+</script>
+</body>
+</html>
